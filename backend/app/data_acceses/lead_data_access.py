@@ -21,7 +21,12 @@ class LeadDataAccess:
     def list(
         self, state: LeadState | None = None, limit: int = 20, offset: int = 0
     ) -> list[Lead]:
-        stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit).offset(offset)
+        stmt = (
+            select(Lead)
+            .order_by(Lead.created_at.desc(), Lead.id)  # id breaks ties
+            .limit(limit)
+            .offset(offset)
+        )
         if state is not None:
             stmt = stmt.where(Lead.state == state)
         return list(self._db.scalars(stmt))
