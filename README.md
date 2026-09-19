@@ -22,6 +22,48 @@ Design decisions live in [docs/Decisions.MD](docs/Decisions.MD). Contributor and
 
 ## Running locally
 
+There are two ways to run it. **Quick start** uses the author's environment files, so it sends real email through the author's Gmail account and signs in through the author's Google client, with nothing to create. **Full local setup** (further down) runs entirely on your machine with Mailhog and your own Google client.
+
+### Quick start (shared environment files)
+
+The two environment files are shared in the submission document. They contain real credentials (a Google client ID and a Gmail app password), so they are not in this repo. Never commit them.
+
+1. Install Python 3.12 and Node.js 20 or newer. Docker is not needed.
+2. Copy the shared files into place:
+   - the backend file to `backend/.env`
+   - the frontend file to `frontend/.env.local`
+3. In `backend/.env`, set `ATTORNEY_EMAILS` to the Google accounts that should have attorney access, separated by commas. This is the allowlist of attorneys who work at Alma. These addresses can sign in to the attorney pages and also receive the new-lead notification emails. It is the only value you need to change.
+4. Start the backend (terminal 1):
+
+   ```bash
+   cd backend
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   uvicorn app.main:app --reload
+   ```
+
+5. Start the frontend (terminal 2):
+
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+6. Open http://localhost:3000/apply and submit the form with a PDF, DOC or DOCX resume. Then open http://localhost:3000/leads and sign in with a Google account listed in `ATTORNEY_EMAILS`.
+
+What to expect:
+
+- Emails are sent from the author's Gmail account. Attorneys receive a "New lead" email with a link to the lead, and the prospect receives a confirmation at the address they typed. Check Spam if they do not appear in the inbox. Nothing shows up in Mailhog in this mode.
+- Run the frontend on port 3000. The Google client only allows `http://localhost:3000` as a sign-in origin.
+- The Google consent screen is in "Testing" mode, so only accounts added as test users can sign in. If sign-in is refused, ask the author to add your Google account.
+- Restart the backend after editing `backend/.env`, because settings are read once at startup.
+
+### Full local setup (Mailhog and your own Google client)
+
+Use this to run everything on your own machine without any shared credentials.
+
 ### Prerequisites
 
 - Python 3.12 and Node.js 20 or newer (with npm)
