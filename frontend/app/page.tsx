@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 export default function HomePage() {
-  return <main>Alma Lead Scheduler</main>;
+  redirect("/apply");
 }

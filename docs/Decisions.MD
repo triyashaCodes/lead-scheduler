@@ -178,3 +178,23 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 - *Logging the full email at WARNING:* puts prospect names and addresses in default logs.
 - *Raising on send failure:* the lead is already saved and the caller is a background task, so an exception would only be lost.
 - *Attaching the resume:* already rejected in "Email delivery"; a link keeps access behind login.
+
+## Leads router: Decided (implementation choices not in the design)
+- Routes: public `POST /api/leads`, and attorney-only `GET /api/leads` (optional `state`, `page`, `page_size` up to 100), `GET /api/leads/{id}` and `PATCH /api/leads/{id}`. Routers only call services; domain errors are mapped in `routers/errors.py`: not found 404, repeated transition 409, empty resume 422, oversize 413, unsupported type 415.
+- `get_current_attorney` lives in `core/auth.py` and always returns 401 until Google SSO is implemented. The attorney email passed to `mark_reached_out` comes from it, never from the body. Service and data-access dependencies are wired in `core/dependencies.py`.
+- The public POST returns only `{ "id": ... }`. The honeypot field is `website`; when filled, `LeadService.create_lead` returns `None` and the router answers 201 with a random id, so a bot cannot tell it was discarded. Nothing is stored or emailed.
+- The text fields are declared individually (FastAPI cannot combine a form model with a file upload) and validated with `LeadCreate`; its errors are returned as a normal 422.
+- The router reads at most `RESUME_MAX_BYTES + 1` bytes of the upload, and the endpoints are sync so blocking DB and disk work runs in the threadpool.
+- After a successful create, the router schedules `LeadEmailService.send_lead_emails` with `BackgroundTasks`, so the `PENDING` rows are actually sent.
+- Not built yet: the authenticated resume download endpoint, real auth, rate limiting.
+
+**Why:** A central error map keeps HTTP codes out of services and gives one place to change them. Returning only the id avoids exposing personal data from an unauthenticated endpoint. A random id and a 201 for the honeypot give bots no signal to adapt to. Bounding the read keeps memory use limited by the cap. The background send is what turns the recorded `PENDING` rows into emails.
+
+**Rejected:**
+- *Honeypot check in the router:* it is an anti-abuse rule, so it belongs in the service.
+- *Returning the full lead from the public POST:* leaks personal data to whoever submitted it.
+- *A 400 or 403 for the honeypot:* tells a bot it was caught.
+- *`try/except` per route for domain errors:* repeats the mapping in every handler.
+- *Reading the whole upload before validating:* an oversize file would be buffered in memory first.
+
+**Known limit:** the server still receives the full upload before the handler runs, so the read cap does not stop a huge request from being received. Production needs a request-size limit at the proxy or ASGI layer.

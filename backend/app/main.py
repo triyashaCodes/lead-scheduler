@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import init_db
-from app.routers import health
+from app.routers import health, leads
+from app.routers.errors import register_error_handlers
 
 settings = get_settings()
 
@@ -26,4 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+register_error_handlers(app)
+
 app.include_router(health.router, prefix="/api")
+app.include_router(leads.router, prefix="/api")
