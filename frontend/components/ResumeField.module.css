@@ -1,0 +1,147 @@
+.drop {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.125rem;
+  border: 1.5px dashed var(--sage-line);
+  border-radius: 4px;
+  background: var(--sage-tint);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.drop:hover,
+.dragging {
+  background: #e1ead9;
+  border-color: var(--sage-strong);
+}
+
+.drop:has(.input:focus-visible) {
+  outline: 3px solid var(--sage-strong);
+  outline-offset: 2px;
+}
+
+.filled {
+  border-style: solid;
+  border-color: var(--sage-strong);
+  background: #dfe9d6;
+}
+
+.invalid,
+.invalid:hover {
+  border-color: var(--brick);
+}
+
+/* The real file input covers the whole area, so a click or a drop anywhere
+   works and keyboard focus lands on a genuine control. */
+.input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.glyph {
+  display: block;
+  overflow: visible;
+}
+
+.sheet {
+  fill: var(--paper);
+  stroke: var(--sage-line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition: fill 200ms ease, stroke 200ms ease;
+}
+
+.fold {
+  fill: none;
+  stroke: var(--sage-line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.lines {
+  fill: none;
+  stroke: var(--sage-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.55;
+  transition: opacity 150ms ease;
+}
+
+.check {
+  fill: none;
+  stroke: var(--paper);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 350ms ease 100ms;
+}
+
+.filled .sheet {
+  fill: var(--sage-strong);
+  stroke: var(--sage-strong);
+}
+
+.filled .fold {
+  stroke: var(--paper);
+}
+
+.filled .lines {
+  opacity: 0;
+}
+
+.filled .check {
+  stroke-dashoffset: 0;
+}
+
+.text {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  color: var(--ink-muted-on-paper);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop,
+  .sheet,
+  .lines,
+  .check {
+    transition: none;
+  }
+}
+
+/* A file that was rejected must not look accepted. */
+.filled.invalid .sheet {
+  fill: var(--paper);
+  stroke: var(--brick);
+}
+
+.filled.invalid .fold {
+  stroke: var(--brick);
+}
+
+.filled.invalid .lines {
+  opacity: 0.55;
+}
+
+.filled.invalid .check {
+  stroke-dashoffset: 1;
+}

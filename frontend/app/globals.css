@@ -1,0 +1,52 @@
+:root {
+  --sage-page: #b7c8aa;
+  --sage-tint: #edf2e7;
+  --sage-line: #6e8664;
+  --sage-strong: #34472f;
+  --sage-strong-hover: #2a3b26;
+  --paper: #f7f9f2;
+  --ink: #1f2c1d;
+  --ink-muted: #3d4f38;
+  --ink-muted-on-paper: #4c5e47;
+  --brick: #a33b2b;
+
+  --font-body: var(--font-hanken), system-ui, sans-serif;
+  --font-display: var(--font-young-serif), Georgia, serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--sage-page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+h1,
+h2,
+p,
+ol {
+  margin: 0;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+}
+
+:focus-visible {
+  outline: 3px solid var(--sage-strong);
+  outline-offset: 2px;
+}
