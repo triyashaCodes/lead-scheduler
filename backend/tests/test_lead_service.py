@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.data_acceses.email_event_data_access import EmailEventDataAccess
 from app.data_acceses.lead_data_access import LeadDataAccess
-from app.models import Base, EmailEvent, EmailKind, EmailStatus, LeadState
+from app.models import Base, EmailEvent, EmailKind, EmailStatus, Lead, LeadState
 from app.schemas.lead import LeadCreate
 from app.services.lead_exceptions import (
     InvalidStateTransitionError,
@@ -266,3 +266,70 @@ def test_open_resume_raises_when_the_file_is_gone(
 
     with pytest.raises(ResumeNotFoundError):
         service.open_resume(lead.id)
+
+
+# mark_reached_out: concurrent attorneys (regression test for a lost update)
+
+
+def test_two_attorneys_marking_at_once_one_wins_and_one_gets_a_conflict(
+    tmp_path: Path,
+) -> None:
+    import threading
+
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'race.db'}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+    Base.metadata.create_all(engine)
+    make_session = sessionmaker(engine, expire_on_commit=False)
+    with make_session() as setup:
+        setup_da = LeadDataAccess(setup)
+        lead = Lead(first_name="A", last_name="B", email="a@b.co", resume_path="k.pdf")
+        setup_da.add(lead)
+        setup_da.commit()
+        lead_id = lead.id
+
+    barrier = threading.Barrier(2)
+    results: dict[str, str] = {}
+
+    def attorney(email: str) -> None:
+        with make_session() as session:
+            data_access = LeadDataAccess(session)
+            real_get = data_access.get_by_id
+
+            def get_then_wait(lead_id: str):
+                found = real_get(lead_id)
+                barrier.wait()  # both attorneys have now read PENDING
+                return found
+
+            data_access.get_by_id = get_then_wait  # type: ignore[method-assign]
+            svc = LeadService(data_access, None, EmailEventDataAccess(session), [])  # type: ignore[arg-type]
+            try:
+                svc.mark_reached_out(lead_id, email)
+                results[email] = "ok"
+            except InvalidStateTransitionError:
+                results[email] = "conflict"
+
+    threads = [threading.Thread(target=attorney, args=(e,)) for e in ("a@firm", "b@firm")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert sorted(results.values()) == ["conflict", "ok"]
+    winner = next(email for email, outcome in results.items() if outcome == "ok")
+    with make_session() as check:
+        stored = LeadDataAccess(check).get_by_id(lead_id)
+    assert stored.state == LeadState.REACHED_OUT
+    assert stored.reached_out_by == winner
+
+
+def test_update_if_state_only_applies_when_the_state_still_matches(
+    data_access: LeadDataAccess, service: LeadService
+) -> None:
+    lead = service.create_lead(lead_data(), PDF, "cv.pdf")
+
+    assert data_access.update_if_state(lead.id, LeadState.REACHED_OUT, reached_out_by="x") is False
+    assert data_access.update_if_state(lead.id, LeadState.PENDING, reached_out_by="x") is True

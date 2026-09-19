@@ -120,8 +120,18 @@ class LeadService:
         if target not in _ALLOWED_TRANSITIONS[lead.state]:
             raise InvalidStateTransitionError(lead.state, target)
 
-        lead.state = target
-        lead.reached_out_at = datetime.now(timezone.utc)
-        lead.reached_out_by = attorney_email
+        # The state check above can be stale by the time we write, so the write
+        # itself is conditional: only the caller who finds the lead still in its
+        # current state wins, and the other gets the same error as a repeat.
+        won = self._data_access.update_if_state(
+            lead_id,
+            lead.state,
+            state=target,
+            reached_out_at=datetime.now(timezone.utc),
+            reached_out_by=attorney_email,
+        )
+        if not won:
+            self._data_access.refresh(lead)
+            raise InvalidStateTransitionError(lead.state, target)
         self._data_access.commit()
         return lead
