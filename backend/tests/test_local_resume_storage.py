@@ -1,4 +1,6 @@
 import io
+import os
+import stat
 import re
 import zipfile
 from pathlib import Path
@@ -124,4 +126,53 @@ def test_open_missing_raises_and_delete_missing_is_a_noop(
 def test_delete_removes_the_file(storage: LocalResumeStorage) -> None:
     key = storage.save(io.BytesIO(make_pdf()))
     storage.delete(key)
+    assert stored_files(storage) == []
+
+
+# File permissions and failed writes
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+def test_resume_files_and_directory_are_private_to_the_owner(
+    storage: LocalResumeStorage,
+) -> None:
+    key = storage.save(io.BytesIO(make_pdf()))
+
+    assert stat.S_IMODE(os.stat(storage._directory).st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(storage._directory / key).st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+def test_an_existing_world_readable_directory_is_tightened(tmp_path: Path) -> None:
+    directory = tmp_path / "resumes"
+    directory.mkdir(mode=0o755)
+
+    LocalResumeStorage(directory, max_bytes=MAX_BYTES)
+
+    assert stat.S_IMODE(os.stat(directory).st_mode) == 0o700
+
+
+def test_a_failed_write_leaves_no_partial_file(
+    storage: LocalResumeStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_fdopen = os.fdopen
+
+    class FailingFile:
+        def __init__(self, fd: int) -> None:
+            self._file = real_fdopen(fd, "wb")
+
+        def __enter__(self) -> "FailingFile":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            self._file.close()
+
+        def write(self, data: bytes) -> int:
+            raise OSError("disk full")
+
+    monkeypatch.setattr(os, "fdopen", lambda fd, mode: FailingFile(fd))
+
+    with pytest.raises(OSError, match="disk full"):
+        storage.save(io.BytesIO(make_pdf()))
+
     assert stored_files(storage) == []
