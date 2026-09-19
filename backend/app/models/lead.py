@@ -1,20 +1,16 @@
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
+from app.models.base import Base, utcnow
 
 
 class LeadState(str, enum.Enum):
     PENDING = "PENDING"
     REACHED_OUT = "REACHED_OUT"
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class Lead(Base):
@@ -33,7 +29,7 @@ class Lead(Base):
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
+        DateTime(timezone=True), default=utcnow
     )
     reached_out_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
