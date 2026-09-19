@@ -1,4 +1,6 @@
+import { clearToken, getToken } from "@/lib/auth";
 import { config } from "@/lib/config";
+import type { Lead, LeadCreated, LeadList, LeadState } from "@/lib/types";
 import {
   FIELD_MESSAGES,
   RESUME_EMPTY_MESSAGE,
@@ -7,11 +9,6 @@ import {
   type FieldErrors,
   type FieldName,
 } from "@/lib/validation";
-
-// Mirrors backend schemas/lead.py LeadCreated.
-export interface LeadCreated {
-  id: string;
-}
 
 export interface LeadSubmission {
   firstName: string;
@@ -92,4 +89,102 @@ export async function submitLead(submission: LeadSubmission): Promise<LeadCreate
     throw new ApiError(FIELDS_MESSAGE, 422, fieldErrors);
   }
   throw new ApiError(SERVER_MESSAGE, response.status);
+}
+
+// Attorney endpoints. The token is read from storage and sent as a Bearer
+// header; a 401 clears it, which returns the attorney to sign-in.
+
+const SESSION_ENDED_MESSAGE = "Your session ended. Sign in again.";
+const NOT_ATTORNEY_MESSAGE =
+  "This Google account is not on the attorney list. Sign out and use a different account.";
+
+async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  if (!token) {
+    clearToken(SESSION_ENDED_MESSAGE);
+    throw new ApiError(SESSION_ENDED_MESSAGE, 401);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${config.apiBaseUrl}${path}`, {
+      ...init,
+      headers: { ...init.headers, Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new ApiError(NETWORK_MESSAGE, 0);
+  }
+
+  if (response.status === 401) {
+    clearToken(SESSION_ENDED_MESSAGE);
+    throw new ApiError(SESSION_ENDED_MESSAGE, 401);
+  }
+  if (response.status === 403) throw new ApiError(NOT_ATTORNEY_MESSAGE, 403);
+  return response;
+}
+
+function failure(response: Response, notFound: string): ApiError {
+  if (response.status === 404) return new ApiError(notFound, 404);
+  return new ApiError(SERVER_MESSAGE, response.status);
+}
+
+export async function listLeads(options: {
+  state?: LeadState | null;
+  page?: number;
+  pageSize?: number;
+}): Promise<LeadList> {
+  const query = new URLSearchParams();
+  if (options.state) query.set("state", options.state);
+  if (options.page) query.set("page", String(options.page));
+  if (options.pageSize) query.set("page_size", String(options.pageSize));
+
+  const response = await authedFetch(`/leads?${query}`);
+  if (!response.ok) throw failure(response, "Those leads could not be found.");
+  return (await response.json()) as LeadList;
+}
+
+export async function getLead(id: string): Promise<Lead> {
+  const response = await authedFetch(`/leads/${encodeURIComponent(id)}`);
+  if (!response.ok) throw failure(response, "That lead does not exist.");
+  return (await response.json()) as Lead;
+}
+
+export async function markReachedOut(id: string): Promise<Lead> {
+  const response = await authedFetch(`/leads/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state: "REACHED_OUT" }),
+  });
+  if (response.status === 409) {
+    throw new ApiError("Another attorney already marked this lead as reached out.", 409);
+  }
+  if (!response.ok) throw failure(response, "That lead does not exist.");
+  return (await response.json()) as Lead;
+}
+
+function filenameFromDisposition(header: string | null): string {
+  if (header) {
+    const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header);
+    if (encoded) {
+      try {
+        return decodeURIComponent(encoded[1]);
+      } catch {
+        // Fall through to the plain form.
+      }
+    }
+    const plain = /filename="([^"]+)"/i.exec(header);
+    if (plain) return plain[1];
+  }
+  return "resume";
+}
+
+export async function downloadResume(
+  id: string,
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await authedFetch(`/leads/${encodeURIComponent(id)}/resume`);
+  if (!response.ok) throw failure(response, "The resume file could not be found.");
+  return {
+    blob: await response.blob(),
+    filename: filenameFromDisposition(response.headers.get("Content-Disposition")),
+  };
 }
