@@ -18,6 +18,7 @@ backend/
     schemas/           # Pydantic request/response models
     services/          # business logic
     data_acceses/      # database access (SQLAlchemy queries)
+    storage/           # file storage (resume interface, validation, local-disk implementation)
     models/            # SQLAlchemy ORM models
   tests/
 frontend/
@@ -32,12 +33,13 @@ This layout is the target; create directories as needed and keep to it.
 
 Dependency direction is strictly downward:
 
-`routers -> services -> data_acceses -> models/DB`
+`routers -> services -> data_acceses / storage -> models/DB or disk`
 
 - **Routers**: parse/validate input via schemas, call a service, return a response. Map service errors to HTTP status codes. **No business logic, no DB queries, no SQLAlchemy imports.**
 - **Schemas**: Pydantic models for API input/output. Never return ORM models directly from routers.
 - **Services**: all business rules and orchestration. Framework-agnostic (no `Request`/`Response`, no HTTP concerns). Raise domain exceptions, not `HTTPException`.
 - **Data_acceses**: the only layer that touches the SQLAlchemy session. Expose intent-revealing methods (`get_by_id`, `list_by_status`), no business decisions.
+- **Storage**: the only layer that touches the file system (or object storage). Defines the `ResumeStorage` interface and its implementations; no business decisions.
 - A layer must not import from a layer above it, and must not skip a layer (routers never call data_accesses directly).
 
 ## Configuration and secrets
