@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     email_from: str
 
     @property
+    def max_request_bytes(self) -> int:
+        # The resume plus room for the text fields and multipart framing.
+        return self.resume_max_bytes + 64 * 1024
+
+    @property
     def attorney_email_list(self) -> list[str]:
         return [e.strip() for e in self.attorney_emails.split(",") if e.strip()]
 
