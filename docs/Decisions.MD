@@ -166,7 +166,7 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 - `EmailEvent` (kind, recipient, status `PENDING`/`SENT`/`FAILED`, attempts, last_error, sent_at) with `EmailEventDataAccess`. One event per email, so each attorney in the allowlist gets their own row.
 - `EmailService` interface in `services/` with `SmtpEmailService` and `ConsoleEmailService`. An empty `SMTP_HOST` selects the console fallback; `build_email_service(settings)` picks the implementation. `EmailMessage` is plain text with no attachments field, so a resume cannot be attached.
 - `LeadService.create_lead` writes the `PENDING` rows in the same transaction as the lead (it takes the attorney allowlist for this). `LeadEmailService.send_lead_emails(lead_id)` opens its own session, sends only the lead's `PENDING` rows and updates each to `SENT` or `FAILED`, so calling it twice sends nothing twice. Send failures are logged and recorded, never raised. Names and subjects have all whitespace, including CR/LF, collapsed to single spaces.
-- Attorney notifications go to `ATTORNEY_EMAILS` (the allowlist); the separate `ATTORNEY_NOTIFICATION_EMAIL` setting is removed. The lead link is `<FRONTEND_ORIGIN>/internal/leads/<id>`.
+- Attorney notifications go to `ATTORNEY_EMAILS` (the allowlist); the separate `ATTORNEY_NOTIFICATION_EMAIL` setting is removed. The lead link is `<FRONTEND_ORIGIN>/leads/<id>`, the frontend lead page.
 - `ConsoleEmailService` logs a WARNING with no personal data and the full message at DEBUG only.
 - Not stored: `provider_message_id` (SMTP returns none). No retry sweep yet, so `FAILED` rows are only a record for now.
 
@@ -186,7 +186,7 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 - The text fields are declared individually (FastAPI cannot combine a form model with a file upload) and validated with `LeadCreate`; its errors are returned as a normal 422.
 - The router reads at most `RESUME_MAX_BYTES + 1` bytes of the upload, and the endpoints are sync so blocking DB and disk work runs in the threadpool.
 - After a successful create, the router schedules `LeadEmailService.send_lead_emails` with `BackgroundTasks`, so the `PENDING` rows are actually sent.
-- Not built yet: the authenticated resume download endpoint, real auth, rate limiting.
+- Not built yet at that point: the resume download endpoint, real auth, rate limiting (the first two now exist; see "Attorney pages and resume download").
 
 **Why:** A central error map keeps HTTP codes out of services and gives one place to change them. Returning only the id avoids exposing personal data from an unauthenticated endpoint. A random id and a 201 for the honeypot give bots no signal to adapt to. Bounding the read keeps memory use limited by the cap. The background send is what turns the recorded `PENDING` rows into emails.
 
@@ -198,3 +198,59 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 - *Reading the whole upload before validating:* an oversize file would be buffered in memory first.
 
 **Known limit:** the server still receives the full upload before the handler runs, so the read cap does not stop a huge request from being received. Production needs a request-size limit at the proxy or ASGI layer.
+
+## Google token verification: Decided (implementation choices not in the design)
+- `get_current_attorney` (`core/auth.py`) reads the `Authorization: Bearer` header and verifies the Google ID token with `google-auth` (signature, expiry, issuer, and audience = `GOOGLE_CLIENT_ID`). It requires `email_verified` to be exactly `true` and returns the email lowercased.
+- Responses: missing, malformed, invalid or expired token, or an unverified or missing email: 401 with `WWW-Authenticate: Bearer`. A valid token whose email is not in `ATTORNEY_EMAILS`: 403. If Google's signing certificates cannot be fetched: 503, since that is not the caller's fault. The allowlist comparison ignores case on both sides.
+- The verifier is a dependency (`get_token_verifier`) so tests can substitute it. Google's certificates are cached per their cache headers using `cachecontrol`, so verifying a token does not call Google on every request. New dependencies: `google-auth`, `requests`, `cachecontrol`.
+
+**Why:** Verifying with Google's library avoids hand-rolling JWT checks, which are easy to get subtly wrong. `email_verified` matters because an unverified address is not proof of who someone is. Separating 401 from 403 lets a client tell "sign in" from "you are signed in but not an attorney". Returning 503 for an outage stops a Google or network problem from looking like a bad token and logging every attorney out. Lowercasing avoids a valid attorney being locked out by capitalisation.
+
+**Rejected:**
+- *Verifying tokens with a call to Google's tokeninfo endpoint on every request:* adds a network round trip and a failure point to each request.
+- *Accepting any valid Google login:* already rejected under Auth; the allowlist is the authorization step.
+- *Treating a certificate-fetch failure as 401:* would sign out every attorney during a network blip.
+- *Skipping `cachecontrol`:* `google-auth` would refetch certificates on every request.
+
+## Attorney sign-in method: Decided
+- The frontend signs attorneys in with Google's browser sign-in (Google Identity Services) and sends the resulting ID token to the API as a Bearer token. The backend only verifies it, so it needs just `GOOGLE_CLIENT_ID` and the `ATTORNEY_EMAILS` allowlist. There is no `GOOGLE_CLIENT_SECRET` and no `GOOGLE_REDIRECT_URI`.
+- Auth.js/NextAuth (server-side OAuth code flow) is not needed now. Moving to it later does not change the backend, which keeps verifying a Google ID token.
+
+**Why:** There are only a few attorneys and the tool is internal, so the smallest thing that meets "Google SSO with an allowlist" wins. The browser flow adds no server-side secret to store or leak, no callback route, and no session or cookie layer to build and secure. The backend already verifies the ID token directly, so option A needs no backend change.
+
+**Rejected:**
+- *Auth.js in Next.js (option B):* gives longer sessions and cookie handling, but adds a client secret in the frontend server env, a redirect route, and a way to pass the ID token to the API. That is more moving parts than the current need justifies.
+- *Backend-run OAuth code flow (`/auth/google/callback` on the API):* needs the secret and redirect URI in the backend, its own session or token, and a rewrite of `get_current_attorney` to verify that instead of Google's token.
+
+**Known limit:** Google ID tokens last about an hour and this flow has no refresh, so attorneys sign in again after they expire. Revisit Auth.js if that becomes a nuisance.
+
+## Attorney pages and resume download: Decided (implementation choices not in the design)
+- `GET /api/leads/{id}/resume` (attorney only) streams from `ResumeStorage` as an attachment with the stored content type, `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`. An unknown lead or a missing file is 404. CORS exposes `Content-Disposition` so the browser can use the suggested filename.
+- The client's original filename is now stored in a new nullable `leads.resume_filename` column, only as text to name the download. `content_disposition` keeps just the safe text (no directories, quotes, control characters or separators), forces the extension from the stored file type, adds an ASCII fallback plus an RFC 5987 `filename*`, and falls back to `resume.<ext>`.
+- Lead timestamps are serialised as UTC (SQLite returns them without a timezone, so the schema now marks them UTC). The attorney email links to `/leads/{id}` on the frontend.
+- The frontend keeps the Google ID token in `sessionStorage`. All attorney calls go through `lib/api.ts`, which sends it as a Bearer header; a 401 clears it and returns to sign-in with a notice, and a 403 shows a "not on the attorney list" message without signing out. `/leads` and `/leads/[id]` are server-rendered shells around client components, because only the browser holds the token. The list filter is a URL query (`?state=`), so it is linkable.
+
+**Why:** Storing the filename lets the attorney get the file under the name the prospect gave it, while treating it as untrusted text means it can never affect a path or a header. `attachment` plus `nosniff` stops a hostile file being rendered in the app's origin. `sessionStorage` limits the token to the tab and clears it on close, and the token is short-lived anyway. Leaving the token in the browser means the server cannot fetch attorney data itself, so data loading happens in client components.
+
+**Rejected:**
+- *Naming the download after the lead instead of the original filename:* simpler, but not what the request asked for.
+- *Trusting the client's extension in the download name:* would let `cv.exe` be offered as a download of a PDF.
+- *`localStorage` for the token:* survives closing the browser, which is longer than an hour-long token warrants.
+- *Rendering the resume inline:* a file from an anonymous uploader should never run in the app's origin.
+
+**Known limit:** the column was added with `create_all`, which does not alter existing tables, so an existing database needs `ALTER TABLE leads ADD COLUMN resume_filename VARCHAR(255)` (done locally). This is the point to introduce Alembic.
+
+## Email transport: Decided (Mailhog first, then Gmail now, transactional provider for production)
+- **Local testing:** Mailhog (the docker-compose file) first, to exercise the whole email flow without sending anything real. With `SMTP_HOST` empty, the console fallback logs instead of sending.
+- **Real emails now:** Gmail over SMTP, using `SmtpEmailService` unchanged: `smtp.gmail.com`, port 587 with STARTTLS, `SMTP_USER` set to the Gmail address, `SMTP_PASSWORD` set to a Google app password (2-Step Verification required), and `EMAIL_FROM` equal to `SMTP_USER` because Gmail rewrites any other sender. The credentials live only in the git-ignored `backend/.env`.
+- **Production:** a transactional provider such as Resend, SendGrid, Postmark or Amazon SES, sending from our own domain with SPF, DKIM and DMARC set up. It uses the same SMTP settings pointed at the provider's SMTP host (`SMTP_HOST`, `SMTP_PORT`, `SMTP_STARTTLS`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`), so there are no code changes. Most providers refuse to send to arbitrary recipients until a domain is verified.
+
+**Why:** The email code depends only on the `EmailService` interface and plain SMTP settings, so moving between Mailhog, Gmail and a provider is a config change. Mailhog is the safe first step because a bug cannot email a real prospect. Gmail gives real delivery today with no domain to buy or verify, which suits development and a demo. A provider is the right production choice because it gives a sending domain we control, authentication records that keep mail out of spam, delivery reporting and higher limits.
+
+**Rejected:**
+- *Mailhog only:* never sends real mail, so it cannot show that delivery works.
+- *A transactional provider right now:* needs a verified domain before it will send to arbitrary recipients, which we do not have yet.
+- *Gmail in production:* a personal account with a daily cap of roughly 500 messages, no domain authentication of our own, and a real chance of landing in spam for other recipients.
+- *Port 465 (implicit TLS):* not supported by the current `SmtpEmailService`, which uses STARTTLS on 587.
+
+**Known limits:** `SENT` means the mail server accepted the message, not that it was delivered. Failed sends are recorded as `FAILED` but never retried yet. Verified-domain setup, bounce handling and a retry sweep are production work.
