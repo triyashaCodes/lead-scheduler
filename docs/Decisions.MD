@@ -133,3 +133,31 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 
 **Rejected:**
 - *`LeadRepository`:* a valid pattern name, but it did not match the layer name and read as a different concept.
+
+## Resume storage implementation: Decided (choices not in the design)
+- `ResumeStorage` (in `storage/`) has `save(stream) -> key`, `open(key)` and `delete(key)`. `save` takes no filename, so the client's name cannot reach a path. `LocalResumeStorage` stores files as `<uuid4>.<ext>` in `RESUME_STORAGE_DIR`.
+- Type is detected from content: PDF by `%PDF-`; legacy DOC by the OLE header plus a `WordDocument` stream name; DOCX by the ZIP header plus a `word/document.xml` entry. Anything else, including xls/xlsx/pptx, is rejected.
+- Size is checked by reading at most `RESUME_MAX_BYTES + 1` bytes, so an oversize upload is rejected without buffering it. Empty files are rejected. Both limits come from config (`RESUME_MAX_BYTES`, renamed from `MAX_RESUME_SIZE_BYTES`).
+- Failures raise `EmptyResumeError`, `ResumeTooLargeError`, `UnsupportedResumeTypeError` or `ResumeNotFoundError` (all `ResumeStorageError`); the router will map them to HTTP codes later. Validation lives in `storage/resume_validation.py` so an S3 implementation reuses it.
+- `open` and `delete` only accept keys matching the generated `<uuid>.<pdf|doc|docx>` pattern, and files are created with exclusive-create so nothing is ever overwritten.
+
+**Why:** The magic bytes for OLE and ZIP are shared with other Office formats, so checking the header alone would accept spreadsheets and archives as resumes; the extra Word-specific check closes that. Reading one byte past the limit keeps memory bounded by the cap. Accepting only our own key format makes path traversal impossible by construction rather than by sanitising input. Domain exceptions keep the service free of HTTP concerns, as the layering rule requires.
+
+**Rejected:**
+- *Header-only detection:* accepts `.xlsx`, `.pptx`, `.jar` and `.xls` as resumes.
+- *Trusting the filename or `Content-Type`:* client-controlled, so trivially spoofed.
+- *Reading the whole upload, then checking size:* lets a huge upload exhaust memory before it is rejected.
+- *Sanitising client filenames for storage:* still risky and unnecessary; the original name is not stored yet.
+- *Deep content scanning (macros, malware):* out of scope here; listed as a production item.
+
+**Known limits:** the DOC/DOCX checks confirm the format, not that the file opens or is safe. A crafted file with the right markers passes, so virus scanning remains a production requirement.
+
+## Storage layer: Decided
+- Resume storage (interface, errors, validation, `LocalResumeStorage`) lives in a `storage/` package beside `data_acceses/`, not in `services/`. `services/` keeps only `lead_service.py` and `lead_exceptions.py`.
+- Dependency direction is `routers -> services -> data_acceses / storage`; `LeadService` imports the `ResumeStorage` interface from `storage/`.
+
+**Why:** Disk I/O is persistence, the same kind of concern as database access, and `services/` is reserved for business rules. Grouping I/O adapters keeps each layer's job obvious and gives an S3 implementation or virus scanner an obvious home without growing `services/`.
+
+**Rejected:**
+- *Keeping everything in `services/`:* mixes I/O code into the business layer and makes the folder sprawl.
+- *A `services/resume/` subpackage:* fewer top-level files, but still puts I/O in the business layer.

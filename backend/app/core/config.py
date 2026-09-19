@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     frontend_origin: str
 
     resume_storage_dir: str
-    max_resume_size_bytes: int
+    resume_max_bytes: int
 
     google_client_id: str
     attorney_emails: str
