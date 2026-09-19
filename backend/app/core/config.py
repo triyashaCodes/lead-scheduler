@@ -15,12 +15,17 @@ class Settings(BaseSettings):
     google_client_id: str
     attorney_emails: str
 
-    smtp_host: str
-    smtp_port: int
+    # Empty smtp_host selects the console fallback instead of sending.
+    smtp_host: str = ""
+    smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
+    smtp_starttls: bool = True
     email_from: str
-    attorney_notification_email: str
+
+    @property
+    def attorney_email_list(self) -> list[str]:
+        return [e.strip() for e in self.attorney_emails.split(",") if e.strip()]
 
 
 @lru_cache
