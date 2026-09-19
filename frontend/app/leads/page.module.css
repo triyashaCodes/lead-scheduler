@@ -1,0 +1,35 @@
+.heading {
+  margin-bottom: 1rem;
+  font-size: clamp(2rem, 1.2rem + 3vw, 3rem);
+  line-height: 1.1;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1.5px solid var(--sage-strong);
+  border-radius: 999px;
+  color: var(--sage-strong);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.filter:hover {
+  background: var(--sage-tint);
+}
+
+.filter[aria-current="page"] {
+  background: var(--sage-strong);
+  color: var(--paper);
+}

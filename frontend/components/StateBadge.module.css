@@ -1,0 +1,21 @@
+.pending,
+.done {
+  display: inline-block;
+  padding: 0.125rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.pending {
+  border: 1.5px solid var(--sage-line);
+  color: var(--ink);
+}
+
+.done {
+  border: 1.5px solid var(--sage-strong);
+  background: var(--sage-strong);
+  color: var(--paper);
+}

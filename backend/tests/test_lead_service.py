@@ -18,6 +18,7 @@ from app.services.lead_service import LeadService
 from app.storage.local_resume_storage import LocalResumeStorage
 from app.storage.resume_storage import (
     EmptyResumeError,
+    ResumeNotFoundError,
     ResumeTooLargeError,
     UnsupportedResumeTypeError,
 )
@@ -224,3 +225,44 @@ def test_mark_reached_out_twice_raises_and_keeps_the_first_attorney(
     unchanged = service.get_lead(lead.id)
     assert unchanged.reached_out_by == "first@example.com"
     assert unchanged.reached_out_at == first_time
+
+
+# resume filename and open_resume
+
+
+def test_create_lead_keeps_the_original_filename_as_text_only(
+    service: LeadService, storage: LocalResumeStorage
+) -> None:
+    lead = service.create_lead(lead_data(), PDF, "  My CV.pdf ")
+
+    assert lead.resume_filename == "My CV.pdf"
+    assert KEY_PATTERN.match(lead.resume_path)
+    assert [f.name for f in stored_files(storage)] == [lead.resume_path]
+
+
+def test_open_resume_returns_the_stored_file_and_its_type(service: LeadService) -> None:
+    lead = service.create_lead(lead_data(), PDF, "cv.pdf")
+
+    resume = service.open_resume(lead.id)
+
+    with resume.stream:
+        assert resume.stream.read() == PDF
+    assert resume.content_type == "application/pdf"
+    assert resume.extension == ".pdf"
+    assert resume.original_filename == "cv.pdf"
+
+
+def test_open_resume_unknown_lead_raises(service: LeadService) -> None:
+    with pytest.raises(LeadNotFoundError):
+        service.open_resume("missing")
+
+
+def test_open_resume_raises_when_the_file_is_gone(
+    service: LeadService, storage: LocalResumeStorage
+) -> None:
+    lead = service.create_lead(lead_data(), PDF, "cv.pdf")
+    for path in stored_files(storage):
+        path.unlink()
+
+    with pytest.raises(ResumeNotFoundError):
+        service.open_resume(lead.id)

@@ -210,9 +210,10 @@ def test_bad_resume_maps_to_the_right_status_and_stores_nothing(
     [
         ("get", "/api/leads", None),
         ("get", "/api/leads/some-id", None),
+        ("get", "/api/leads/some-id/resume", None),
         ("patch", "/api/leads/some-id", {"state": "REACHED_OUT"}),
     ],
-    ids=["list", "get", "patch"],
+    ids=["list", "get", "resume", "patch"],
 )
 def test_internal_endpoints_return_401_without_authentication(
     env: Env, method: str, path: str, json: dict | None
@@ -347,3 +348,71 @@ def test_patch_twice_returns_409_and_keeps_the_first_attorney(env: Env) -> None:
 
     assert response.status_code == 409
     assert env.client.get(f"/api/leads/{lead_id}").json()["reached_out_by"] == ATTORNEYS[0]
+
+
+# GET /api/leads/{id}/resume
+
+
+def test_resume_download_streams_the_file_with_a_safe_header(env: Env) -> None:
+    env.login(ATTORNEYS[0])
+    lead_id = submit(env, filename="My CV (final).pdf").json()["id"]
+
+    response = env.client.get(f"/api/leads/{lead_id}/resume")
+
+    assert response.status_code == 200
+    assert response.content == PDF
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"].startswith('attachment; filename="My CV (final).pdf"')
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "no-store" in response.headers["cache-control"]
+
+
+def test_resume_download_neutralises_a_hostile_filename(env: Env) -> None:
+    env.login(ATTORNEYS[0])
+    lead_id = submit(env, filename="../../etc/pass;wd.pdf").json()["id"]
+
+    header = env.client.get(f"/api/leads/{lead_id}/resume").headers["content-disposition"]
+
+    assert "/" not in header.split("filename*=")[0].replace("attachment; ", "")
+    assert ".." not in header
+    assert header.startswith('attachment; filename="passwd.pdf"')
+
+
+def test_resume_download_for_an_unknown_lead_returns_404(env: Env) -> None:
+    env.login(ATTORNEYS[0])
+    assert env.client.get("/api/leads/missing/resume").status_code == 404
+
+
+def test_resume_download_returns_404_when_the_file_is_missing(env: Env) -> None:
+    env.login(ATTORNEYS[0])
+    lead_id = create_lead(env)
+    for path in env.stored_resumes():
+        path.unlink()
+
+    response = env.client.get(f"/api/leads/{lead_id}/resume")
+
+    assert response.status_code == 404
+    assert "detail" in response.json()
+
+
+def test_resume_download_without_authentication_returns_no_file(env: Env) -> None:
+    lead_id = create_lead(env)
+
+    response = env.client.get(f"/api/leads/{lead_id}/resume")
+
+    assert response.status_code == 401
+    assert PDF not in response.content
+
+
+# Timestamps
+
+
+def test_lead_timestamps_are_serialised_as_utc(env: Env) -> None:
+    env.login(ATTORNEYS[0])
+    lead_id = create_lead(env)
+    env.client.patch(f"/api/leads/{lead_id}", json={"state": "REACHED_OUT"})
+
+    body = env.client.get(f"/api/leads/{lead_id}").json()
+
+    for field in ("created_at", "reached_out_at"):
+        assert body[field].endswith(("Z", "+00:00")), body[field]

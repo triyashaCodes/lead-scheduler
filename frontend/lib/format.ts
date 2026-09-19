@@ -5,3 +5,10 @@ export function formatBytes(bytes: number): string {
   }
   return `${Math.max(1, Math.round(bytes / 1024))}\u00A0KB`;
 }
+
+export function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(iso));
+}

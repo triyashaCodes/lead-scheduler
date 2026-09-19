@@ -1,9 +1,17 @@
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
 from app.models import LeadState
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    # SQLite drops the timezone, so values come back naive but are always UTC.
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+UtcDatetime = Annotated[datetime, AfterValidator(_ensure_utc)]
 
 
 class LeadCreate(BaseModel):
@@ -32,8 +40,8 @@ class LeadRead(BaseModel):
     last_name: str
     email: EmailStr
     state: LeadState
-    created_at: datetime
-    reached_out_at: datetime | None
+    created_at: UtcDatetime
+    reached_out_at: UtcDatetime | None
     reached_out_by: str | None
 
 

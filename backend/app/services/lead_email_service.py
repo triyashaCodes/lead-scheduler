@@ -88,7 +88,7 @@ class LeadEmailService:
                 ),
             )
 
-        lead_url = f"{self._frontend_url}/internal/leads/{lead.id}"
+        lead_url = f"{self._frontend_url}/leads/{lead.id}"
         return EmailMessage(
             sender=self._sender,
             to=event.recipient,

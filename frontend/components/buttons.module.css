@@ -1,0 +1,43 @@
+.primary,
+.secondary {
+  min-height: 3rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.primary {
+  border: 0;
+  background: var(--sage-strong);
+  color: var(--paper);
+}
+
+.primary:hover {
+  background: var(--sage-strong-hover);
+}
+
+.secondary {
+  border: 1.5px solid var(--sage-strong);
+  background: transparent;
+  color: var(--sage-strong);
+}
+
+.secondary:hover {
+  background: var(--sage-tint);
+}
+
+.primary[aria-disabled="true"],
+.secondary[aria-disabled="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary,
+  .secondary {
+    transition: none;
+  }
+}
