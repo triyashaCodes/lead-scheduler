@@ -94,6 +94,6 @@ def build_email_service(settings: Settings) -> EmailService:
         host=settings.smtp_host,
         port=settings.smtp_port,
         username=settings.smtp_user,
-        password=settings.smtp_password,
+        password=settings.smtp_password.get_secret_value(),
         starttls=settings.smtp_starttls,
     )

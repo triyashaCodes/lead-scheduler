@@ -71,3 +71,44 @@ def test_a_local_test_server_may_be_used_without_tls(host: str) -> None:
 def test_a_remote_server_without_credentials_needs_no_tls() -> None:
     SmtpEmailService("relay.example.com", 25, "", "", starttls=False).send(MESSAGE)
     assert FakeSmtp.instances[0].sent is True
+
+
+# Settings hygiene
+
+
+def _settings(**overrides):
+    from app.core.config import Settings
+
+    values = {
+        "database_url": "sqlite://",
+        "frontend_origin": "http://localhost:3000",
+        "resume_storage_dir": "./r",
+        "resume_max_bytes": 1024,
+        "google_client_id": "x",
+        "attorney_emails": "a@firm.example",
+        "email_from": "f@firm.example",
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)
+
+
+def test_the_smtp_password_is_not_shown_when_settings_are_printed() -> None:
+    settings = _settings(smtp_password="s3cret-app-password")
+
+    assert "s3cret-app-password" not in repr(settings)
+    assert "s3cret-app-password" not in str(settings)
+
+
+def test_the_real_password_still_reaches_the_smtp_service() -> None:
+    from app.services.email_service import build_email_service
+
+    service = build_email_service(
+        _settings(smtp_host="smtp.gmail.com", smtp_user="u", smtp_password="s3cret-app-password")
+    )
+
+    assert service._password == "s3cret-app-password"
+
+
+@pytest.mark.parametrize("configured", ["http://localhost:3000/", " http://localhost:3000 ", "http://localhost:3000//"])
+def test_the_frontend_origin_is_normalised_so_cors_matches(configured: str) -> None:
+    assert _settings(frontend_origin=configured).frontend_origin == "http://localhost:3000"
