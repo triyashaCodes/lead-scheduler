@@ -1,5 +1,6 @@
 import logging
 import smtplib
+import ssl
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from email.message import EmailMessage as MimeMessage
@@ -7,6 +8,8 @@ from email.message import EmailMessage as MimeMessage
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,9 @@ class SmtpEmailService(EmailService):
         self._starttls = starttls
 
     def send(self, message: EmailMessage) -> None:
+        # Never send credentials in the clear, except to a local test server.
+        if self._username and not self._starttls and self._host not in _LOCAL_HOSTS:
+            raise EmailSendError("Refusing to send SMTP credentials without TLS")
         try:
             mime = MimeMessage()
             mime["From"] = message.sender
@@ -71,7 +77,9 @@ class SmtpEmailService(EmailService):
             mime.set_content(message.body)
             with smtplib.SMTP(self._host, self._port, timeout=10) as smtp:
                 if self._starttls:
-                    smtp.starttls()
+                    # smtplib's default context does not verify the server's
+                    # certificate, so pass one that does.
+                    smtp.starttls(context=ssl.create_default_context())
                 if self._username:
                     smtp.login(self._username, self._password)
                 smtp.send_message(mime)
