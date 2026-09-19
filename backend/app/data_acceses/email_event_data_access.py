@@ -1,7 +1,9 @@
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import EmailEvent, EmailStatus
+from app.models import EmailEvent, EmailKind, EmailStatus
 
 
 class EmailEventDataAccess:
@@ -31,6 +33,23 @@ class EmailEventDataAccess:
             .order_by(EmailEvent.created_at, EmailEvent.id)
         )
         return list(self._db.scalars(stmt))
+
+    def count_since(self, recipient: str, kind: EmailKind, since: datetime) -> int:
+        """How many emails of this kind were recorded for an address since a time.
+
+        The address is compared ignoring case, so changing the capitals does not
+        make it look like a different recipient.
+        """
+        stmt = (
+            select(func.count())
+            .select_from(EmailEvent)
+            .where(
+                func.lower(EmailEvent.recipient) == recipient.lower(),
+                EmailEvent.kind == kind,
+                EmailEvent.created_at >= since,
+            )
+        )
+        return self._db.scalar(stmt) or 0
 
     def commit(self) -> None:
         self._db.commit()

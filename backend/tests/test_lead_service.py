@@ -333,3 +333,79 @@ def test_update_if_state_only_applies_when_the_state_still_matches(
 
     assert data_access.update_if_state(lead.id, LeadState.REACHED_OUT, reached_out_by="x") is False
     assert data_access.update_if_state(lead.id, LeadState.PENDING, reached_out_by="x") is True
+
+
+# Confirmation emails are capped per address (so the form cannot flood an inbox)
+
+
+def confirmations(email_events: EmailEventDataAccess, lead_id: str) -> list:
+    return [
+        e for e in email_events.list_by_lead(lead_id)
+        if e.kind == EmailKind.PROSPECT_CONFIRMATION
+    ]
+
+
+def test_confirmations_stop_after_the_daily_limit_but_the_lead_is_still_saved(
+    service: LeadService, data_access: LeadDataAccess, email_events: EmailEventDataAccess
+) -> None:
+    leads = [service.create_lead(lead_data("victim@example.com"), PDF, "cv.pdf") for _ in range(5)]
+
+    counts = [len(confirmations(email_events, lead.id)) for lead in leads]
+
+    assert counts == [1, 1, 1, 0, 0]  # the default limit is 3 a day
+    assert data_access.count() == 5
+    # Attorneys are still notified for every lead.
+    for lead in leads:
+        notified = [e for e in email_events.list_by_lead(lead.id) if e.kind == EmailKind.ATTORNEY_NOTIFICATION]
+        assert len(notified) == len(ATTORNEYS)
+
+
+def test_changing_the_capitals_does_not_bypass_the_limit(
+    service: LeadService, email_events: EmailEventDataAccess
+) -> None:
+    variants = ["victim@example.com", "Victim@Example.com", "VICTIM@EXAMPLE.COM", "victim@EXAMPLE.com"]
+    leads = [service.create_lead(lead_data(v), PDF, "cv.pdf") for v in variants]
+
+    assert [len(confirmations(email_events, lead.id)) for lead in leads] == [1, 1, 1, 0]
+
+
+def test_the_limit_is_per_address(
+    service: LeadService, email_events: EmailEventDataAccess
+) -> None:
+    for _ in range(3):
+        service.create_lead(lead_data("a@example.com"), PDF, "cv.pdf")
+
+    other = service.create_lead(lead_data("b@example.com"), PDF, "cv.pdf")
+
+    assert len(confirmations(email_events, other.id)) == 1
+
+
+def test_confirmations_older_than_a_day_no_longer_count(
+    service: LeadService, session: Session, email_events: EmailEventDataAccess
+) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    first = service.create_lead(lead_data("a@example.com"), PDF, "cv.pdf")
+    for _ in range(2):
+        service.create_lead(lead_data("a@example.com"), PDF, "cv.pdf")
+    old = datetime.now(timezone.utc) - timedelta(days=2)
+    for event in session.query(EmailEvent).filter_by(kind=EmailKind.PROSPECT_CONFIRMATION):
+        event.created_at = old
+    session.commit()
+
+    again = service.create_lead(lead_data("a@example.com"), PDF, "cv.pdf")
+
+    assert len(confirmations(email_events, again.id)) == 1
+    assert first.id != again.id
+
+
+def test_a_custom_limit_can_be_set(
+    data_access: LeadDataAccess, storage: LocalResumeStorage, email_events: EmailEventDataAccess
+) -> None:
+    strict = LeadService(data_access, storage, email_events, ATTORNEYS, max_confirmations_per_address_per_day=1)
+
+    first = strict.create_lead(lead_data("a@example.com"), PDF, "cv.pdf")
+    second = strict.create_lead(lead_data("a@example.com"), PDF, "cv.pdf")
+
+    assert len(confirmations(email_events, first.id)) == 1
+    assert len(confirmations(email_events, second.id)) == 0

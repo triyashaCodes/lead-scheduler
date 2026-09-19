@@ -1,7 +1,7 @@
 import io
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import PurePath
 from typing import BinaryIO
 
@@ -39,11 +39,13 @@ class LeadService:
         resume_storage: ResumeStorage,
         email_event_data_access: EmailEventDataAccess,
         attorney_emails: list[str],
+        max_confirmations_per_address_per_day: int = 3,
     ) -> None:
         self._data_access = data_access
         self._resume_storage = resume_storage
         self._email_events = email_event_data_access
         self._attorney_emails = attorney_emails
+        self._max_confirmations = max_confirmations_per_address_per_day
 
     def create_lead(
         self,
@@ -75,7 +77,13 @@ class LeadService:
             )
             # PENDING email rows join the lead's transaction, so a saved lead
             # always has a record of the emails owed for it.
-            recipients = [(EmailKind.PROSPECT_CONFIRMATION, data.email)]
+            recipients = []
+            if self._may_send_confirmation(data.email):
+                recipients.append((EmailKind.PROSPECT_CONFIRMATION, data.email))
+            else:
+                # The address is typed by an anonymous visitor, so without a cap
+                # the form could be used to flood someone else's inbox.
+                logger.info("Confirmation email skipped: daily limit for an address")
             recipients += [
                 (EmailKind.ATTORNEY_NOTIFICATION, attorney)
                 for attorney in self._attorney_emails
@@ -89,6 +97,13 @@ class LeadService:
             self._resume_storage.delete(resume_key)
             raise
         return lead
+
+    def _may_send_confirmation(self, address: str) -> bool:
+        since = datetime.now(timezone.utc) - timedelta(days=1)
+        sent = self._email_events.count_since(
+            address, EmailKind.PROSPECT_CONFIRMATION, since
+        )
+        return sent < self._max_confirmations
 
     def get_lead(self, lead_id: str) -> Lead:
         lead = self._data_access.get_by_id(lead_id)

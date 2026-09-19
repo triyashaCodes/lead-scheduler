@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Public form limits (per client address, per process).
     submission_rate_limit: int = 10
     submission_rate_window_seconds: int = 3600
+    max_confirmations_per_address_per_day: int = 3
 
     @property
     def max_request_bytes(self) -> int:
