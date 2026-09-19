@@ -105,11 +105,29 @@ def test_sends_confirmation_and_attorney_notifications_and_records_sent(
     assert {e.recipient for e in events} == {"ada@example.com", *ATTORNEYS}
 
     notification = next(m for m in fake.sent if m.to == ATTORNEYS[0])
-    assert f"http://localhost:3000/internal/leads/{lead_id}" in notification.body
+    assert f"http://localhost:3000/leads/{lead_id}" in notification.body
     assert "secret-key.pdf" not in notification.body
 
 
 # Failures and edge cases
+
+
+def test_attorney_email_links_to_the_frontend_lead_page(
+    session_factory: sessionmaker[Session],
+) -> None:
+    lead_id = make_lead(session_factory)
+    fake = FakeEmailService()
+
+    # FRONTEND ends with a slash, as an origin might be configured.
+    make_service(session_factory, fake).send_lead_emails(lead_id)
+
+    body = next(m.body for m in fake.sent if m.to == ATTORNEYS[0])
+    links = [word for word in body.split() if word.startswith("http")]
+    assert links == [f"http://localhost:3000/leads/{lead_id}"]
+    assert "/internal/" not in body
+    # The prospect's confirmation carries no link at all.
+    prospect = next(m.body for m in fake.sent if m.to == "ada@example.com")
+    assert "http" not in prospect
 
 
 def test_a_failed_send_is_recorded_and_logged_not_raised(
