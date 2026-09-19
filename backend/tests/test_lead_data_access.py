@@ -89,3 +89,18 @@ def test_read_schema_hides_resume_path(repo: LeadDataAccess) -> None:
     lead = repo.add(make_lead())
     repo.commit()
     assert "resume_path" not in LeadRead.model_validate(lead).model_dump()
+
+
+def test_pages_never_repeat_or_skip_leads_that_share_a_timestamp(
+    repo: LeadDataAccess,
+) -> None:
+    same_moment = datetime.now(timezone.utc)
+    for n in range(7):
+        repo.add(make_lead(f"same{n}@example.com", created_at=same_moment))
+    repo.commit()
+
+    pages = [repo.list(limit=2, offset=offset) for offset in (0, 2, 4, 6)]
+    ids = [lead.id for page in pages for lead in page]
+
+    assert len(ids) == 7
+    assert len(set(ids)) == 7

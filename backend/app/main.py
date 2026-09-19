@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.routers import health, leads
@@ -20,6 +21,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Alma Lead Scheduler", lifespan=lifespan)
 
+# Added before CORS so CORS wraps it and a 413 still carries CORS headers.
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_bytes)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin],

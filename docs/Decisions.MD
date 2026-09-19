@@ -264,3 +264,23 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 - *A single click with no confirmation:* too easy to record by accident, and it cannot be reversed.
 - *An undo option after marking:* would need a new `REACHED_OUT` to `PENDING` transition and a decision about what happens to who and when it was recorded, which the design deliberately left out.
 - *A custom-built modal:* more code and more accessibility risk than the browser's built-in dialog.
+
+## Security review fixes: Decided
+A skeptical review of the backend found issues in the public form, SMTP and the state change. Fixed, each with a regression test (all but the pagination tiebreak were confirmed to fail on the old code):
+- **Atomic state change:** `mark_reached_out` is now a compare-and-set update, so two attorneys acting at once get one success and one 409. Before, both succeeded and the second overwrote `reached_out_by`.
+- **SMTP TLS:** STARTTLS verifies the server certificate, and credentials are never sent without TLS to a non-local host (the send is recorded as `FAILED`, so the form is unaffected).
+- **Public form abuse:** a total request-size cap (resume limit plus 64 KB) that refuses oversize bodies before they are fully received; a per-address rate limit on `POST /api/leads` (10 per hour by default, `429` with `Retry-After`); and a cap of 3 confirmation emails per address per day. Over the cap, the confirmation is skipped and logged, but the lead is still saved and attorneys are still notified.
+- **Smaller:** resume files are `0600` in a `0700` directory and a failed write leaves no partial file; Google's certificate fetch times out after 5 seconds; not-found responses no longer reveal the stored file name; `smtp_password` is a `SecretStr`; a trailing slash on `FRONTEND_ORIGIN` is stripped; pagination breaks timestamp ties by id.
+
+**Why:** The form is public and now sends real email, so unbounded uploads and unlimited confirmations were the most likely real-world abuse. A conditional update is the smallest change that makes the one-way transition safe without adding locks. Skipping the confirmation instead of rejecting the submission keeps a real prospect's lead while denying an attacker a way to spam a third party.
+
+**Rejected:**
+- *Rejecting a submission when the confirmation limit is hit:* would turn away real prospects who resubmit, and would reveal whether an address has been used.
+- *A row lock or version column for the state change:* more machinery than a single conditional `UPDATE`.
+- *A CAPTCHA or emailed confirmation now:* the right long-term answer to email abuse, but it adds a third-party service or a new flow.
+
+**Deferred as production work (not fixed):**
+- **Malware scanning of resumes.** File-type checks are shallow (a PDF only needs to start with `%PDF-`, and a macro-enabled `.docm` passes as `.docx`). Needs a scanner; `.docm` could be rejected cheaply.
+- **Email delivery is not crash-safe.** A crash after the lead is saved leaves emails `PENDING` with no retry, and a crash after SMTP accepts could send twice. Needs an outbox or a retry sweep that claims rows.
+- **The rate limit is per process and keyed by the connecting address.** Behind a proxy every visitor looks the same, and several instances each count separately, so production needs the limit at the proxy or in a shared store.
+- **Identity is the email, not Google's `sub`.** The public `/docs` and `openapi.json` are exposed. Dependencies are not pinned.

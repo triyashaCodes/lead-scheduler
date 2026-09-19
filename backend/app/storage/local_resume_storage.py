@@ -1,3 +1,4 @@
+import os
 import re
 import uuid
 from pathlib import Path
@@ -16,6 +17,8 @@ class LocalResumeStorage(ResumeStorage):
         self._directory = Path(directory)
         self._max_bytes = max_bytes
         self._directory.mkdir(parents=True, exist_ok=True)
+        # Resumes are personal data: readable by the app's user only.
+        os.chmod(self._directory, 0o700)
 
     def save(self, stream: BinaryIO) -> str:
         # Read one byte past the limit so an oversize upload is rejected
@@ -23,8 +26,16 @@ class LocalResumeStorage(ResumeStorage):
         data = stream.read(self._max_bytes + 1)
         extension = validate_resume(data, self._max_bytes)
         key = f"{uuid.uuid4()}{extension}"
-        with open(self._directory / key, "xb") as file:
-            file.write(data)
+        path = self._directory / key
+        # Exclusive create with owner-only permissions; never overwrites.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as file:
+                file.write(data)
+        except BaseException:
+            # Do not leave a partial file behind (for example, disk full).
+            path.unlink(missing_ok=True)
+            raise
         return key
 
     def open(self, key: str) -> BinaryIO:

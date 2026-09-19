@@ -11,6 +11,7 @@ from app.core.auth import get_current_attorney
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_lead_email_service, get_resume_storage
+from app.core.rate_limit import RateLimiter, get_submission_limiter
 from app.data_acceses.email_event_data_access import EmailEventDataAccess
 from app.data_acceses.lead_data_access import LeadDataAccess
 from app.main import app
@@ -66,6 +67,8 @@ def env(tmp_path: Path) -> Iterator[Env]:
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_settings] = lambda: settings
+    generous = RateLimiter(max_requests=10_000, window_seconds=60)
+    app.dependency_overrides[get_submission_limiter] = lambda: generous
     app.dependency_overrides[get_resume_storage] = lambda: LocalResumeStorage(
         resume_dir, MAX_BYTES
     )
@@ -416,3 +419,28 @@ def test_lead_timestamps_are_serialised_as_utc(env: Env) -> None:
 
     for field in ("created_at", "reached_out_at"):
         assert body[field].endswith(("Z", "+00:00")), body[field]
+
+
+# Error responses do not expose internal values
+
+
+def test_a_missing_resume_file_does_not_reveal_the_stored_file_name(env: Env) -> None:
+    env.login(ATTORNEYS[0])
+    lead_id = create_lead(env)
+    stored_name = env.stored_resumes()[0].name
+    for path in env.stored_resumes():
+        path.unlink()
+
+    response = env.client.get(f"/api/leads/{lead_id}/resume")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Resume file not found"}
+    assert stored_name not in response.text
+
+
+def test_an_unknown_lead_gets_a_generic_message(env: Env) -> None:
+    env.login(ATTORNEYS[0])
+    response = env.client.get("/api/leads/some-made-up-id")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Lead not found"}

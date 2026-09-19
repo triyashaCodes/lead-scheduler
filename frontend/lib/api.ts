@@ -71,6 +71,12 @@ export async function submitLead(submission: LeadSubmission): Promise<LeadCreate
   const payload = await response.json().catch(() => null);
   const detail = payload?.detail;
 
+  if (response.status === 429) {
+    throw new ApiError(
+      "Too many submissions from your connection. Wait a little while and try again.",
+      429,
+    );
+  }
   if (response.status === 413) {
     throw new ApiError(FIELDS_MESSAGE, 413, {
       resume: resumeTooLargeMessage(config.resumeMaxBytes),

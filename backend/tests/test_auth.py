@@ -236,3 +236,41 @@ def test_identity_in_the_body_is_ignored(
 def test_identity_in_the_body_does_not_authenticate(client: TestClient) -> None:
     response = client.post("/echo", json={"email": "one@firm.example"})
     assert response.status_code == 401
+
+
+# Certificate fetch timeout
+
+
+def test_google_certificate_fetches_use_a_short_timeout() -> None:
+    from types import SimpleNamespace
+
+    from app.core.auth import _CERTS_TIMEOUT_SECONDS, _TimeoutRequest
+
+    calls: list[dict] = []
+
+    class Session:
+        def request(self, method, url, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(status_code=200, headers={}, content=b"{}")
+
+    _TimeoutRequest(session=Session())("https://example.test/certs")
+
+    assert calls[0]["timeout"] == _CERTS_TIMEOUT_SECONDS
+    assert _CERTS_TIMEOUT_SECONDS <= 10
+
+
+def test_an_explicit_timeout_is_still_honoured() -> None:
+    from types import SimpleNamespace
+
+    from app.core.auth import _TimeoutRequest
+
+    calls: list[dict] = []
+
+    class Session:
+        def request(self, method, url, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(status_code=200, headers={}, content=b"{}")
+
+    _TimeoutRequest(session=Session())("https://example.test/certs", timeout=2)
+
+    assert calls[0]["timeout"] == 2

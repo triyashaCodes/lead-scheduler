@@ -43,6 +43,7 @@ def get_lead_service(
         resume_storage,
         email_event_data_access,
         settings.attorney_email_list,
+        settings.max_confirmations_per_address_per_day,
     )
 
 
