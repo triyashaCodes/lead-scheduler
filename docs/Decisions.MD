@@ -161,3 +161,20 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 **Rejected:**
 - *Keeping everything in `services/`:* mixes I/O code into the business layer and makes the folder sprawl.
 - *A `services/resume/` subpackage:* fewer top-level files, but still puts I/O in the business layer.
+
+## Email sending: Decided (implementation choices not in the design)
+- `EmailEvent` (kind, recipient, status `PENDING`/`SENT`/`FAILED`, attempts, last_error, sent_at) with `EmailEventDataAccess`. One event per email, so each attorney in the allowlist gets their own row.
+- `EmailService` interface in `services/` with `SmtpEmailService` and `ConsoleEmailService`. An empty `SMTP_HOST` selects the console fallback; `build_email_service(settings)` picks the implementation. `EmailMessage` is plain text with no attachments field, so a resume cannot be attached.
+- `LeadService.create_lead` writes the `PENDING` rows in the same transaction as the lead (it takes the attorney allowlist for this). `LeadEmailService.send_lead_emails(lead_id)` opens its own session, sends only the lead's `PENDING` rows and updates each to `SENT` or `FAILED`, so calling it twice sends nothing twice. Send failures are logged and recorded, never raised. Names and subjects have all whitespace, including CR/LF, collapsed to single spaces.
+- Attorney notifications go to `ATTORNEY_EMAILS` (the allowlist); the separate `ATTORNEY_NOTIFICATION_EMAIL` setting is removed. The lead link is `<FRONTEND_ORIGIN>/internal/leads/<id>`.
+- `ConsoleEmailService` logs a WARNING with no personal data and the full message at DEBUG only.
+- Not stored: `provider_message_id` (SMTP returns none). No retry sweep yet, so `FAILED` rows are only a record for now.
+
+**Why:** One row per email keeps each success or failure independent, so a bad attorney address does not hide a delivered confirmation. A fallback means the app runs and the flow can be exercised with no mail server or secrets. Collapsing whitespace in names blocks header injection, where a name like `Ada\r\nBcc: x` would add a header. Using the allowlist avoids two lists of attorney addresses drifting apart.
+
+**Rejected:**
+- *A single event per lead:* cannot represent one email failing while others succeed.
+- *Writing the `PENDING` rows inside `send_lead_emails`:* a crash between saving the lead and calling it would leave a lead with no email record.
+- *Logging the full email at WARNING:* puts prospect names and addresses in default logs.
+- *Raising on send failure:* the lead is already saved and the caller is a background task, so an exception would only be lost.
+- *Attaching the resume:* already rejected in "Email delivery"; a link keeps access behind login.

@@ -6,8 +6,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.data_acceses.email_event_data_access import EmailEventDataAccess
 from app.data_acceses.lead_data_access import LeadDataAccess
-from app.models import Base, LeadState
+from app.models import Base, EmailEvent, EmailKind, EmailStatus, LeadState
 from app.schemas.lead import LeadCreate
 from app.services.lead_exceptions import (
     InvalidStateTransitionError,
@@ -24,14 +25,25 @@ from app.storage.resume_storage import (
 MAX_BYTES = 1024
 PDF = b"%PDF-1.7\n%%EOF\n"
 KEY_PATTERN = re.compile(r"^[0-9a-f-]{36}\.pdf$")
+ATTORNEYS = ["one@firm.example", "two@firm.example"]
 
 
 @pytest.fixture
-def data_access() -> Iterator[LeadDataAccess]:
+def session() -> Iterator[Session]:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
-        yield LeadDataAccess(session)
+        yield session
+
+
+@pytest.fixture
+def data_access(session: Session) -> LeadDataAccess:
+    return LeadDataAccess(session)
+
+
+@pytest.fixture
+def email_events(session: Session) -> EmailEventDataAccess:
+    return EmailEventDataAccess(session)
 
 
 @pytest.fixture
@@ -40,8 +52,12 @@ def storage(tmp_path: Path) -> LocalResumeStorage:
 
 
 @pytest.fixture
-def service(data_access: LeadDataAccess, storage: LocalResumeStorage) -> LeadService:
-    return LeadService(data_access, storage)
+def service(
+    data_access: LeadDataAccess,
+    storage: LocalResumeStorage,
+    email_events: EmailEventDataAccess,
+) -> LeadService:
+    return LeadService(data_access, storage, email_events, ATTORNEYS)
 
 
 def lead_data(email: str = "ada@example.com") -> LeadCreate:
@@ -68,6 +84,21 @@ def test_create_lead_persists_a_pending_lead_and_stores_the_resume(
     assert data_access.get_by_id(lead.id) is not None
 
 
+def test_create_lead_records_one_pending_email_per_recipient(
+    service: LeadService, email_events: EmailEventDataAccess
+) -> None:
+    lead = service.create_lead(lead_data(), PDF, "cv.pdf")
+
+    events = email_events.list_by_lead(lead.id)
+    assert {e.status for e in events} == {EmailStatus.PENDING}
+    assert sorted((e.kind.value, e.recipient) for e in events) == sorted(
+        [
+            (EmailKind.PROSPECT_CONFIRMATION.value, "ada@example.com"),
+            *[(EmailKind.ATTORNEY_NOTIFICATION.value, a) for a in ATTORNEYS],
+        ]
+    )
+
+
 def test_create_lead_never_uses_the_client_filename(
     service: LeadService, storage: LocalResumeStorage, tmp_path: Path
 ) -> None:
@@ -90,6 +121,7 @@ def test_create_lead_never_uses_the_client_filename(
 def test_create_lead_with_an_invalid_resume_creates_nothing(
     service: LeadService,
     data_access: LeadDataAccess,
+    email_events: EmailEventDataAccess,
     storage: LocalResumeStorage,
     content: bytes,
     error: type[Exception],
@@ -98,11 +130,13 @@ def test_create_lead_with_an_invalid_resume_creates_nothing(
         service.create_lead(lead_data(), content, "cv.pdf")
 
     assert data_access.count() == 0
+    assert email_events.list_pending_by_lead("any") == []
     assert stored_files(storage) == []
 
 
 def test_create_lead_removes_the_stored_resume_if_saving_the_lead_fails(
     service: LeadService,
+    session: Session,
     data_access: LeadDataAccess,
     storage: LocalResumeStorage,
     monkeypatch: pytest.MonkeyPatch,
@@ -116,6 +150,9 @@ def test_create_lead_removes_the_stored_resume_if_saving_the_lead_fails(
         service.create_lead(lead_data(), PDF, "cv.pdf")
 
     assert stored_files(storage) == []
+    session.rollback()
+    assert data_access.count() == 0
+    assert session.query(EmailEvent).count() == 0
 
 
 # get_lead / list_leads

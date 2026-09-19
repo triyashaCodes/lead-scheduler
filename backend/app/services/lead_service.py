@@ -1,8 +1,9 @@
 import io
 from datetime import datetime, timezone
 
+from app.data_acceses.email_event_data_access import EmailEventDataAccess
 from app.data_acceses.lead_data_access import LeadDataAccess
-from app.models import Lead, LeadState
+from app.models import EmailEvent, EmailKind, Lead, LeadState
 from app.schemas.lead import LeadCreate
 from app.services.lead_exceptions import (
     InvalidStateTransitionError,
@@ -18,10 +19,16 @@ _ALLOWED_TRANSITIONS: dict[LeadState, set[LeadState]] = {
 
 class LeadService:
     def __init__(
-        self, data_access: LeadDataAccess, resume_storage: ResumeStorage
+        self,
+        data_access: LeadDataAccess,
+        resume_storage: ResumeStorage,
+        email_event_data_access: EmailEventDataAccess,
+        attorney_emails: list[str],
     ) -> None:
         self._data_access = data_access
         self._resume_storage = resume_storage
+        self._email_events = email_event_data_access
+        self._attorney_emails = attorney_emails
 
     def create_lead(
         self, data: LeadCreate, resume_bytes: bytes, resume_filename: str
@@ -38,6 +45,17 @@ class LeadService:
                     resume_path=resume_key,
                 )
             )
+            # PENDING email rows join the lead's transaction, so a saved lead
+            # always has a record of the emails owed for it.
+            recipients = [(EmailKind.PROSPECT_CONFIRMATION, data.email)]
+            recipients += [
+                (EmailKind.ATTORNEY_NOTIFICATION, attorney)
+                for attorney in self._attorney_emails
+            ]
+            for kind, recipient in recipients:
+                self._email_events.add(
+                    EmailEvent(lead_id=lead.id, kind=kind, recipient=recipient)
+                )
             self._data_access.commit()
         except Exception:
             self._resume_storage.delete(resume_key)
