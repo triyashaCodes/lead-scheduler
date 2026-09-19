@@ -42,3 +42,9 @@ class LeadList(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class LeadCreated(BaseModel):
+    """Public response to a submission: just the id, no personal data."""
+
+    id: str

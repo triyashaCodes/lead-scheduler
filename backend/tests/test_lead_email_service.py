@@ -17,20 +17,10 @@ from app.services.email_service import (
     build_email_service,
 )
 from app.services.lead_email_service import LeadEmailService
+from tests.fakes import FakeEmailService
 
 ATTORNEYS = ["one@firm.example", "two@firm.example"]
 FRONTEND = "http://localhost:3000/"
-
-
-class FakeEmailService(EmailService):
-    def __init__(self, fail_for: set[str] | None = None) -> None:
-        self.sent: list[EmailMessage] = []
-        self._fail_for = fail_for or set()
-
-    def send(self, message: EmailMessage) -> None:
-        if message.to in self._fail_for:
-            raise EmailSendError("mail server unavailable")
-        self.sent.append(message)
 
 
 @pytest.fixture
