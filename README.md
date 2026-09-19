@@ -17,8 +17,8 @@ Design decisions live in [docs/Decisions.MD](docs/Decisions.MD). Contributor and
 | Coding-agent usage: short writeup (½ page) | [docs/AI-Usage-Writeup.md](docs/AI-Usage-Writeup.md) |
 | Coding-agent usage: prompt logs | [docs/Prompt-Logs.md](docs/Prompt-Logs.md) (excerpts), per-prompt notes in [docs/prompt-logs/](docs/prompt-logs/) |
 | Coding-agent usage: attribution (agent vs hand-written) | [NOTES.md](NOTES.md), plus a `Co-Authored-By: Claude` trailer on agent commits |
-| GitHub link uploaded to the assignment document | Pending |
-| Screen recording of the end-to-end workflow | Pending |
+| GitHub link uploaded to the assignment document | Attached to submission |
+| Screen recording of the end-to-end workflow | Attached to submission |
 
 ## Running locally
 
