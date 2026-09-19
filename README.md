@@ -7,6 +7,19 @@ Public lead intake form plus an auth-guarded internal UI for attorneys to review
 
 Design decisions live in [docs/Decisions.MD](docs/Decisions.MD). Contributor and architecture rules live in [CLAUDE.md](CLAUDE.md). A PDF copy of the guide below is at [docs/Running-Locally.pdf](docs/Running-Locally.pdf).
 
+## Deliverables
+
+| Deliverable | Where |
+| --- | --- |
+| Public GitHub repo | [github.com/triyashaCodes/lead-scheduler](https://github.com/triyashaCodes/lead-scheduler) |
+| How to run locally | [Running locally](#running-locally) below, also as a [PDF](docs/Running-Locally.pdf) |
+| Design document (why and how) | [docs/Design.md](docs/Design.md): summary, tradeoffs and production changes, with the [architecture diagram](docs/architecture-hld.png). Full reasoning and rejected alternatives: [docs/Decisions.MD](docs/Decisions.MD) |
+| Coding-agent usage: short writeup (½ page) | [docs/AI-Usage-Writeup.md](docs/AI-Usage-Writeup.md) |
+| Coding-agent usage: prompt logs | [docs/Prompt-Logs.md](docs/Prompt-Logs.md) (excerpts), per-prompt notes in [docs/prompt-logs/](docs/prompt-logs/) |
+| Coding-agent usage: attribution (agent vs hand-written) | [NOTES.md](NOTES.md), plus a `Co-Authored-By: Claude` trailer on agent commits |
+| GitHub link uploaded to the assignment document | Pending |
+| Screen recording of the end-to-end workflow | Pending |
+
 ## Running locally
 
 ### Prerequisites
