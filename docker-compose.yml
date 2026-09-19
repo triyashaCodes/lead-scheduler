@@ -1,0 +1,8 @@
+# Local dev only: catches outgoing email. SMTP on 1025, web UI on http://localhost:8025.
+services:
+  mailhog:
+    image: mailhog/mailhog
+    platform: linux/amd64  # image has no arm64 build; runs under emulation on Apple Silicon
+    ports:
+      - "1025:1025"
+      - "8025:8025"
