@@ -1,14 +1,17 @@
 import uuid
-from typing import Annotated
+from collections.abc import Iterator
+from typing import Annotated, BinaryIO
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query, UploadFile, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from app.core.auth import get_current_attorney
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_lead_email_service, get_lead_service
 from app.models import LeadState
+from app.routers.downloads import content_disposition
 from app.schemas.lead import (
     LeadCreate,
     LeadCreated,
@@ -82,6 +85,30 @@ def list_leads(
 )
 def get_lead(lead_id: str, service: LeadServiceDep) -> LeadRead:
     return LeadRead.model_validate(service.get_lead(lead_id))
+
+
+def _stream_and_close(stream: BinaryIO, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+    try:
+        while chunk := stream.read(chunk_size):
+            yield chunk
+    finally:
+        stream.close()
+
+
+@router.get("/{lead_id}/resume", dependencies=[Depends(get_current_attorney)])
+def download_resume(lead_id: str, service: LeadServiceDep) -> StreamingResponse:
+    resume = service.open_resume(lead_id)
+    return StreamingResponse(
+        _stream_and_close(resume.stream),
+        media_type=resume.content_type,
+        headers={
+            "Content-Disposition": content_disposition(
+                resume.original_filename, resume.extension
+            ),
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.patch("/{lead_id}", response_model=LeadRead)

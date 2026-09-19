@@ -14,6 +14,17 @@ _DOC_STREAM_NAME = "WordDocument".encode("utf-16-le")
 _DOCX_MARKER = "word/document.xml"
 
 
+_CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def content_type_for_extension(extension: str) -> str:
+    return _CONTENT_TYPES.get(extension.lower(), "application/octet-stream")
+
+
 def detect_extension(data: bytes) -> str | None:
     """Return ".pdf", ".doc" or ".docx" based on file content, else None.
 

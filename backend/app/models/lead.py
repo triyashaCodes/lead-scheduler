@@ -23,6 +23,8 @@ class Lead(Base):
     last_name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(320))
     resume_path: Mapped[str] = mapped_column(String(512))
+    # The client's original name, kept only to name the download. Never a path.
+    resume_filename: Mapped[str | None] = mapped_column(String(255), default=None)
     state: Mapped[LeadState] = mapped_column(
         Enum(LeadState, native_enum=False, length=20),
         default=LeadState.PENDING,

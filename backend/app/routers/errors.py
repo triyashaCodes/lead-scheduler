@@ -7,12 +7,14 @@ from app.services.lead_exceptions import (
 )
 from app.storage.resume_storage import (
     EmptyResumeError,
+    ResumeNotFoundError,
     ResumeTooLargeError,
     UnsupportedResumeTypeError,
 )
 
 _STATUS_BY_ERROR: dict[type[Exception], int] = {
     LeadNotFoundError: status.HTTP_404_NOT_FOUND,
+    ResumeNotFoundError: status.HTTP_404_NOT_FOUND,
     InvalidStateTransitionError: status.HTTP_409_CONFLICT,
     EmptyResumeError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     ResumeTooLargeError: status.HTTP_413_CONTENT_TOO_LARGE,
