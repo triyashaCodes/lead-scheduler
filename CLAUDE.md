@@ -56,7 +56,7 @@ Dependency direction is strictly downward:
 
 ## Database
 
-- SQLite via SQLAlchemy; one engine/session factory in `core/`, injected into repositories through FastAPI dependencies.
+- SQLite via SQLAlchemy; one engine/session factory in `core/`, injected into data-access classes through FastAPI dependencies.
 - Schema changes go through migrations (Alembic) once introduced; do not edit the DB by hand.
 
 ## Frontend conventions
@@ -68,7 +68,7 @@ Dependency direction is strictly downward:
 ## Git workflow
 
 - **Small commits**: one logical change per commit, each leaving the repo in a working state.
-- Imperative, concise messages (e.g. `Add lead repository`, not `updates`).
+- Imperative, concise messages (e.g. `Add lead data access`, not `updates`).
 - Do not mix refactors with behavior changes or backend with unrelated frontend work in one commit.
 - Never commit secrets, `.env`, SQLite DB files, `node_modules`, or virtualenvs.
 

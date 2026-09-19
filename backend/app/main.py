@@ -1,12 +1,23 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.database import init_db
 from app.routers import health
 
 settings = get_settings()
 
-app = FastAPI(title="Alma Lead Scheduler")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    init_db()
+    yield
+
+
+app = FastAPI(title="Alma Lead Scheduler", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
