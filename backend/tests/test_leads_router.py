@@ -11,6 +11,7 @@ from app.core.auth import get_current_attorney
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_lead_email_service, get_resume_storage
+from app.core.rate_limit import RateLimiter, get_submission_limiter
 from app.data_acceses.email_event_data_access import EmailEventDataAccess
 from app.data_acceses.lead_data_access import LeadDataAccess
 from app.main import app
@@ -66,6 +67,8 @@ def env(tmp_path: Path) -> Iterator[Env]:
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_settings] = lambda: settings
+    generous = RateLimiter(max_requests=10_000, window_seconds=60)
+    app.dependency_overrides[get_submission_limiter] = lambda: generous
     app.dependency_overrides[get_resume_storage] = lambda: LocalResumeStorage(
         resume_dir, MAX_BYTES
     )

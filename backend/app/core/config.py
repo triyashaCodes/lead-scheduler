@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     email_from: str
 
+    # Public form limits (per client address, per process).
+    submission_rate_limit: int = 10
+    submission_rate_window_seconds: int = 3600
+
     @property
     def max_request_bytes(self) -> int:
         # The resume plus room for the text fields and multipart framing.

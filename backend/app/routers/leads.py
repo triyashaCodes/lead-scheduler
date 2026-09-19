@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.core.auth import get_current_attorney
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_lead_email_service, get_lead_service
+from app.core.rate_limit import limit_submissions
 from app.models import LeadState
 from app.routers.downloads import content_disposition
 from app.schemas.lead import (
@@ -28,7 +29,12 @@ LeadServiceDep = Annotated[LeadService, Depends(get_lead_service)]
 AttorneyDep = Annotated[str, Depends(get_current_attorney)]
 
 
-@router.post("", response_model=LeadCreated, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=LeadCreated,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limit_submissions)],
+)
 def create_lead(
     first_name: Annotated[str, Form()],
     last_name: Annotated[str, Form()],
