@@ -254,3 +254,13 @@ Each entry lists what was chosen, why, and which alternatives lost and why.
 - *Port 465 (implicit TLS):* not supported by the current `SmtpEmailService`, which uses STARTTLS on 587.
 
 **Known limits:** `SENT` means the mail server accepted the message, not that it was delivered. Failed sends are recorded as `FAILED` but never retried yet. Verified-domain setup, bounce handling and a retry sweep are production work.
+
+## Confirm before marking reached out: Decided
+- Clicking "Mark reached out" on a lead opens a confirmation dialog first ("Mark as reached out?", naming the lead and saying it cannot be undone). The state only changes when the attorney confirms. Cancel, Escape and a click on the backdrop all close it without changes, and Cancel has focus by default.
+
+**Why:** `REACHED_OUT` is a one-way transition (a repeat is a 409 and there is no undo), and it records who did it and when, so a mis-click would leave a wrong record that nobody can correct. A confirmation costs one extra click on a rare action. The native `<dialog>` element supplies focus trapping, Escape and focus return without extra code.
+
+**Rejected:**
+- *A single click with no confirmation:* too easy to record by accident, and it cannot be reversed.
+- *An undo option after marking:* would need a new `REACHED_OUT` to `PENDING` transition and a decision about what happens to who and when it was recorded, which the design deliberately left out.
+- *A custom-built modal:* more code and more accessibility risk than the browser's built-in dialog.

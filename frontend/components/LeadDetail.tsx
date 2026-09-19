@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/format";
 import type { Lead } from "@/lib/types";
 
 import buttons from "./buttons.module.css";
+import { ConfirmDialog } from "./ConfirmDialog";
 import styles from "./LeadDetail.module.css";
 import { StateBadge } from "./StateBadge";
 
@@ -22,6 +23,7 @@ export function LeadDetail({ id }: { id: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +63,7 @@ export function LeadDetail({ id }: { id: string }) {
       }
     } finally {
       setMarking(false);
+      setConfirming(false);
     }
   }
 
@@ -144,14 +147,31 @@ export function LeadDetail({ id }: { id: string }) {
             <button
               type="button"
               className={buttons.primary}
-              aria-disabled={marking}
-              onClick={handleMark}
+              onClick={() => {
+                setActionError(null);
+                setConfirming(true);
+              }}
             >
-              {marking ? "Saving…" : "Mark reached out"}
+              Mark reached out
             </button>
           )}
         </div>
       </article>
+
+      <ConfirmDialog
+        open={confirming}
+        title="Mark as reached out?"
+        confirmLabel="Mark reached out"
+        busyLabel="Saving…"
+        busy={marking}
+        onConfirm={handleMark}
+        onCancel={() => setConfirming(false)}
+      >
+        <p>
+          This records that you have contacted {lead.first_name} {lead.last_name}.
+          The lead moves out of Pending and this can&apos;t be undone.
+        </p>
+      </ConfirmDialog>
     </>
   );
 }
