@@ -20,6 +20,20 @@ TokenVerifier = Callable[[str, str], dict[str, Any]]
 
 _bearer = HTTPBearer(auto_error=False)
 
+# google-auth's default is 120 seconds. A slow or unreachable Google would tie
+# up a worker thread that long for every uncached request.
+_CERTS_TIMEOUT_SECONDS = 5
+
+
+class _TimeoutRequest(google_requests.Request):
+    """google-auth's HTTP transport, with a short default timeout."""
+
+    def __call__(  # type: ignore[override]
+        self, url, method="GET", body=None, headers=None,
+        timeout=_CERTS_TIMEOUT_SECONDS, **kwargs,
+    ):
+        return super().__call__(url, method, body, headers, timeout, **kwargs)
+
 
 def make_google_verifier(request: google_requests.Request) -> TokenVerifier:
     """Build a verifier that checks signature, expiry, issuer and audience."""
@@ -35,7 +49,7 @@ def get_token_verifier() -> TokenVerifier:
     # Google's signing certificates are cached according to their cache
     # headers, so this does not call Google on every request.
     session = cachecontrol.CacheControl(requests.Session())
-    return make_google_verifier(google_requests.Request(session=session))
+    return make_google_verifier(_TimeoutRequest(session=session))
 
 
 def _unauthorized(detail: str) -> HTTPException:
